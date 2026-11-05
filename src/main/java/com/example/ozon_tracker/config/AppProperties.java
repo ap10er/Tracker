@@ -5,6 +5,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 
 /**
  * Все настройки приложения ({@code ozon.*}, {@code telegram.*}) в одном типизированном bean'е.
@@ -14,12 +16,14 @@ import java.nio.file.Paths;
 public record AppProperties(Ozon ozon, Telegram telegram) {
 
     public record Ozon(
-            @DefaultValue("https://www.ozon.ru/cart") String cartUrl,
+            @DefaultValue("https://www.ozon.ru/cart/?c=17") String cartUrl,
             @DefaultValue("./data/cookies.json") String cookiesFile,
             @DefaultValue("./data/browser-profile") String browserProfileDir,
-            @DefaultValue("true") boolean headless,
-            @DefaultValue("30") int timeoutSeconds,
-            @DefaultValue("false") boolean dumpHtml,
+            @DefaultValue("false") boolean headless,
+            @DefaultValue("45") int timeoutSeconds,
+            @DefaultValue("BYN") String currencyCode,
+            @DefaultValue("Br") String currencySymbol,
+            @DefaultValue("true") boolean dumpHtml,
             @DefaultValue("./data/debug") String debugDir
     ) {
         public Path cookies() {
@@ -38,7 +42,15 @@ public record AppProperties(Ozon ozon, Telegram telegram) {
     public record Telegram(
             String token,
             String chatId,
-            @DefaultValue("60") int minIntervalSeconds
+            @DefaultValue("3") int minIntervalSeconds,
+            @DefaultValue("09:00") String dailyReportTime
     ) {
+        public LocalTime dailyReportAt() {
+            try {
+                return LocalTime.parse(dailyReportTime);
+            } catch (DateTimeParseException e) {
+                return LocalTime.of(9, 0);
+            }
+        }
     }
 }

@@ -17,7 +17,7 @@
     <properties>
         <!-- В IDE у вас JDK 27 — Maven соберёт проект и на нём.
              Для запуска в этой песочнице (JDK 17) переопределите: -Djava.version=17 -->
-        <java.version>27</java.version>
+        <java.version>17</java.version>
         <playwright.version>1.48.0</playwright.version>
         <telegrambots.version>10.3.0</telegrambots.version>
     </properties>

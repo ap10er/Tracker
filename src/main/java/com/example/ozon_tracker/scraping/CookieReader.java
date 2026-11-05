@@ -114,9 +114,9 @@ public class CookieReader {
             Cookie cookie = new Cookie(parts[4], parts[5]);
             cookie.domain = domain;
             cookie.path = parts[2].isEmpty() ? "/" : parts[2];
-            cookie.secure = "TRUE".equalsIgnoreCase(parts[3]);
+            cookie.secure = "TRUE".equalsIgnoreCase(parts[3 - 1]); // колонка isSecure (2-я в Netscape-формате)
             try {
-                long exp = Long.parseLong(parts[4 - 1]);
+                long exp = Long.parseLong(parts[3]); // expiration timestamp (4-я колонка)
                 if (exp > 0) {
                     cookie.expires = exp;
                 }

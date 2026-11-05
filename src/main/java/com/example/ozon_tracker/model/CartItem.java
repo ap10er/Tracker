@@ -60,17 +60,17 @@ public class CartItem {
     private BigDecimal historicalMinPrice;
 
     /** Количество штук в корзине. */
-    @Column(name = "quantity")
+    @Column(name = "quantity", nullable = false)
     @Builder.Default
     private Integer quantity = 1;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "availability", length = 20)
+    @Column(name = "availability", nullable = false, length = 20)
     @Builder.Default
     private Availability availability = Availability.UNKNOWN;
 
     /** Позиция присутствует в корзине (false — товар удалён или больше недоступен). */
-    @Column(name = "is_in_cart")
+    @Column(name = "is_in_cart", nullable = false)
     @Builder.Default
     private Boolean inCart = true;
 

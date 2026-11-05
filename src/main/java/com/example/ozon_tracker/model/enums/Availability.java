@@ -19,4 +19,8 @@ public enum Availability {
     public String getLabel() {
         return label;
     }
+
+    public static Availability fromInStock(boolean inStock) {
+        return inStock ? AVAILABLE : OUT_OF_STOCK;
+    }
 }

@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: Ozon_tracker
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ozon_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+# ---- Настройки приложения (маппятся на AppProperties) ----
+ozon:
+  # Регион: Беларусь. c=17 — минская зона доставки, BYN в ценах.
+  cart-url: ${OZON_CART_URL:https://www.ozon.ru/cart/?c=17}
+  cookies-file: ./data/cookies.json
+  browser-profile-dir: ./data/browser-profile
+  # По запросу пользователя — visible: окно браузера видно при каждом запуске.
+  # После первого успешного входа профиль сохранится и капча должна запрашиваться реже.
+  headless: false
+  timeout-seconds: 45
+  currency-code: BYN
+  currency-symbol: "Br"
+  # Сохранять HTML страницы корзины в ./data/debug при каждом скане (помогает чинить селекторы)
+  dump-html: true
+  debug-dir: ./data/debug
+
+telegram:
+  token: ${TELEGRAM_BOT_TOKEN:}
+  chat-id: ${TELEGRAM_CHAT_ID:}
+  # Минимальный интервал между отправками, чтобы не упереться в лимиты Bot API
+  min-interval-seconds: 3
+  # Время ежедневного отчёта-дайджеста (локальное время ПК)
+  daily-report-time: "09:00"
+
+logging:
+  level:
+    root: INFO
+    com.example.ozon_tracker: DEBUG
