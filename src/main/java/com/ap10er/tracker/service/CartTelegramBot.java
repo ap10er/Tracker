@@ -102,9 +102,9 @@ public class CartTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
         StringBuilder sb = new StringBuilder();
         sb.append("<b>").append(index).append(". ").append(escape(item.getName())).append("</b>\n")
-                .append("   🔢 <code>").append(escape(item.getArticle())).append("</code>\n")
-                .append("   💰 Сейчас: <b>").append(current.toPlainString()).append("</b>\n")
-                .append("   ⭐ Минимум: <b>").append(min.toPlainString()).append("</b>  ").append(status).append('\n');
+                .append("🔢 Артикул: <code>").append(escape(item.getArticle())).append("</code>\n")
+                .append("💰 Текущая цена: <b>").append(current.toPlainString()).append("</b>\n")
+                .append("⭐ Минимальная цена: <b>").append(min.toPlainString()).append("</b>  ").append(status).append('\n');
         if (!atMin) {
             sb.append("   ➕ Дороже минимума на ").append(diff.toPlainString()).append('\n');
         }
