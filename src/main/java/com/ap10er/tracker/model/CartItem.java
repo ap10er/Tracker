@@ -2,57 +2,41 @@ package com.ap10er.tracker.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
-import java.time.Instant;
 
 @Entity
 @Table(name = "cart_items")
 public class CartItem {
 
+    /** Артикул Wildberries — первичный ключ. */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(nullable = false)
+    private String article;
 
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
-    private String article;
-
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal price;
 
-    @Column(nullable = false, updatable = false)
-    private Instant scannedAt;
+    /** Минимальная цена, зафиксированная для товара за всё время наблюдений. */
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal minPrice;
 
     public CartItem() {
     }
 
-    public CartItem(String name, String article, BigDecimal price, Instant scannedAt) {
+    public CartItem(String name, String article, BigDecimal price) {
+        this(name, article, price, price);
+    }
+
+    public CartItem(String name, String article, BigDecimal price, BigDecimal minPrice) {
         this.name = name;
         this.article = article;
         this.price = price;
-        this.scannedAt = scannedAt;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
+        this.minPrice = minPrice;
     }
 
     public String getArticle() {
@@ -63,6 +47,14 @@ public class CartItem {
         this.article = article;
     }
 
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
     public BigDecimal getPrice() {
         return price;
     }
@@ -71,11 +63,11 @@ public class CartItem {
         this.price = price;
     }
 
-    public Instant getScannedAt() {
-        return scannedAt;
+    public BigDecimal getMinPrice() {
+        return minPrice;
     }
 
-    public void setScannedAt(Instant scannedAt) {
-        this.scannedAt = scannedAt;
+    public void setMinPrice(BigDecimal minPrice) {
+        this.minPrice = minPrice;
     }
 }

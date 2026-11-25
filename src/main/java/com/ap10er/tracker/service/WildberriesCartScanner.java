@@ -18,7 +18,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -98,18 +97,24 @@ public class WildberriesCartScanner {
                 log.info("Найдено товаров в корзине Wildberries: {}", items.size());
 
                 for (CartItem item : items) {
-                    Optional<CartItem> existing = repository.findByArticle(item.getArticle());
+                    Optional<CartItem> existing = repository.findById(item.getArticle());
                     if (existing.isPresent()) {
                         CartItem e = existing.get();
+                        BigDecimal currentPrice = item.getPrice();
+                        BigDecimal historicalMin = e.getMinPrice() != null ? e.getMinPrice() : currentPrice;
+                        BigDecimal newMin = currentPrice.min(historicalMin);
+
                         e.setName(item.getName());
-                        e.setPrice(item.getPrice());
-                        e.setScannedAt(Instant.now());
+                        e.setPrice(currentPrice);
+                        e.setMinPrice(newMin);
                         repository.save(e);
-                        log.info("Обновлён: {} | {} | {}", e.getName(), e.getArticle(), e.getPrice());
+                        log.info("Обновлён: {} | {} | текущая={} | минимум={} | новый минимум={}",
+                                e.getName(), e.getArticle(), currentPrice, historicalMin, newMin);
                     } else {
-                        item.setScannedAt(Instant.now());
+                        item.setMinPrice(item.getPrice());
                         repository.save(item);
-                        log.info("Добавлен: {} | {} | {}", item.getName(), item.getArticle(), item.getPrice());
+                        log.info("Добавлен: {} | {} | текущая={} | минимум={}",
+                                item.getName(), item.getArticle(), item.getPrice(), item.getMinPrice());
                     }
                 }
                 log.info("Сканирование завершено, всего в БД: {}", repository.count());
@@ -172,7 +177,7 @@ public class WildberriesCartScanner {
                     log.warn("Цена не распознана для товара '{}' (артикул {}) — сохраняем с ценой 0.01", name, article);
                     price = new BigDecimal("0.01");
                 }
-                result.add(new CartItem(name, article, price, null));
+                result.add(new CartItem(name, article, price));
             } catch (Exception e) {
                 log.warn("Ошибка разбора карточки товара: {}", e.getMessage());
             }
