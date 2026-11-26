@@ -1,4 +1,4 @@
-# Tracker — Wildberries Cart Tracker
+#Wildberries Cart Tracker
 
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
