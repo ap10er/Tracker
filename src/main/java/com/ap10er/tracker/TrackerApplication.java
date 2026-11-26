@@ -21,13 +21,6 @@ public class TrackerApplication {
         );
 
         SpringApplication.run(TrackerApplication.class, args);
-
-        // Приложение без веб-сервера: удерживаем JVM,
-        // чтобы long polling Telegram-бота продолжал работать.
-        try {
-            Thread.currentThread().join();
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-        }
+        // Приложение завершится само: CartScanRunner закроет контекст после отправки отчёта.
     }
 }

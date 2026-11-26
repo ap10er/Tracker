@@ -9,10 +9,6 @@ import org.springframework.core.env.MapPropertySource;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Загружает переменные из src/main/resources/psw.env в окружение Spring
- * до создания любых бинов (в том числе DataSource и Telegram-бота).
- */
 public class EnvFileEnvironmentPostProcessor implements EnvironmentPostProcessor {
 
     @Override

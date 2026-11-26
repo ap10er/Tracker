@@ -19,59 +19,73 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Telegram-бот: по команде /go показывает все товары из cart_items. */
 @Component
 public class CartTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(CartTelegramBot.class);
-
-    /** Лимит Telegram на длину текста одного сообщения. */
     private static final int MESSAGE_LIMIT = 4096;
 
     private final TelegramClient telegramClient;
     private final CartItemRepository repository;
+    private volatile String chatId;
 
     public CartTelegramBot(TelegramProperties props, CartItemRepository repository) {
         this.telegramClient = new OkHttpTelegramClient(props.getBotToken());
         this.repository = repository;
+        String configured = props.getChatId();
+        this.chatId = configured == null || configured.isBlank() ? null : configured.trim();
     }
 
     @Override
     public void consume(Update update) {
-        if (update == null || !update.hasMessage() || !update.getMessage().hasText()) {
+        if (update == null || !update.hasMessage()) {
             return;
         }
-        String text = update.getMessage().getText().trim();
-        if (!text.equals("/go") && !text.startsWith("/go@")) {
+        if (!update.getMessage().hasText() && !update.getMessage().hasPhoto() && !update.getMessage().hasDocument()) {
             return;
         }
-        Long chatId = update.getMessage().getChatId();
-        log.info("Команда /go от chatId={}", chatId);
+        Long incoming = update.getMessage().getChatId();
+        if (incoming == null) {
+            return;
+        }
+        String candidate = String.valueOf(incoming);
+        if (!candidate.equals(chatId)) {
+            chatId = candidate;
+            log.info("Запомнен chatId получателя отчёта: {}", chatId);
+        }
+    }
 
+    public void sendCartReport() {
+        String target = chatId;
+        if (target == null || target.isBlank()) {
+            log.warn("Неизвестен chatId получателя. Напишите боту @{} любое сообщение "
+                    + "или задайте telegram.chat-id в application.properties", "Ozon_trackbot");
+            return;
+        }
         for (String message : buildCartMessages()) {
             try {
                 telegramClient.execute(SendMessage.builder()
-                        .chatId(chatId)
+                        .chatId(target)
                         .text(message)
                         .parseMode("HTML")
                         .disableWebPagePreview(true)
                         .build());
             } catch (TelegramApiException e) {
-                log.error("Не удалось отправить сообщение в чат {}: {}", chatId, e.getMessage());
+                log.error("Не удалось отправить сообщение получателю {}: {}", target, e.getMessage());
                 return;
             }
         }
+        log.info("Отчёт отправлен в Telegram (chatId={})", target);
     }
 
     /** Формирует один или несколько HTML-блоков с товарами. */
     private List<String> buildCartMessages() {
         List<CartItem> items = new ArrayList<>(repository.findAll());
-        // Сначала товары на минимальной цене, затем по названию.
         items.sort(Comparator.comparing(CartTelegramBot::isAtMinimum).reversed()
                 .thenComparing(item -> item.getName() == null ? "" : item.getName()));
 
         if (items.isEmpty()) {
-            return List.of("📭 <b>Корзина пуста</b>\n\nТоваров пока нет. Запустите сканирование Wildberries.");
+            return List.of("📭 <b>Корзина пуста</b>\n\nТоваров в базе нет.");
         }
 
         List<String> result = new ArrayList<>();
@@ -119,14 +133,12 @@ public class CartTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         return item.getPrice().compareTo(item.getMinPrice()) <= 0;
     }
 
-    /** Экранирует служебные символы HTML в пользовательском тексте. */
     private static String escape(String value) {
         if (value == null) {
             return "(без названия)";
         }
-        // Двойные кавычки в тексте сообщения безопасны для HTML-разметки Telegram.
-        return value.replace("&amp;", "&amp;")
-                .replace("<lt;", "<lt;")
-                .replace(">gt;", ">gt;");
+        return value.replace("&", "&")
+                .replace("<", "<")
+                .replace(">", ">");
     }
 }
