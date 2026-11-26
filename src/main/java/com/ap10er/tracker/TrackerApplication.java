@@ -1,5 +1,6 @@
 package com.ap10er.tracker;
 
+import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -9,6 +10,17 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class TrackerApplication {
 
     public static void main(String[] args) {
+        // Загружаем секреты из psw.env до старта контекста.
+        Dotenv dotenv = Dotenv.configure()
+                .filename("psw.env")
+                .directory("src/main/resources")
+                .ignoreIfMissing()
+                .load();
+        dotenv.entries().forEach(entry ->
+                System.setProperty(entry.getKey(), entry.getValue())
+        );
+
         SpringApplication.run(TrackerApplication.class, args);
+        // Приложение завершится само: CartScanRunner закроет контекст после отправки отчёта.
     }
 }

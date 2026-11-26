@@ -15,13 +15,6 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/**
- * Режим получения/обновления сессии Wildberries.
- * Активен только когда wildberries.headless=false.
- *
- * Если файл сессии уже есть — загружаем его, чтобы не терять cookies между запусками.
- * После авторизации перезаписываем файл обновлённой сессией.
- */
 @Component
 @ConditionalOnProperty(name = "wildberries.headless", havingValue = "false")
 public class SessionCaptureRunner implements CommandLineRunner {
@@ -72,7 +65,6 @@ public class SessionCaptureRunner implements CommandLineRunner {
                         try {
                             System.in.read();
                         } catch (Exception ignored) {
-                            // в IDE stdin может быть недоступен — просто ждём таймаут
                         }
                     });
                     waiter.setDaemon(true);
@@ -80,7 +72,8 @@ public class SessionCaptureRunner implements CommandLineRunner {
                     waiter.join(120_000);
 
                     log.info("Текущий URL перед сохранением: {}", page.url());
-                    context.storageState(new BrowserContext.StorageStateOptions().setPath(output));
+                    context.storageState(new BrowserContext.StorageStateOptions()
+                            .setIndexedDB(true).setPath(output));
                     log.info("Сессия сохранена: {}", output.toAbsolutePath());
                 } finally {
                     context.close();

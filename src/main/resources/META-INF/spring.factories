@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.ap10er.tracker.config.EnvFileEnvironmentPostProcessor

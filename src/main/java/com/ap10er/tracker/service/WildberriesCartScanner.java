@@ -18,10 +18,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -30,10 +31,8 @@ public class WildberriesCartScanner {
 
     private static final Logger log = LoggerFactory.getLogger(WildberriesCartScanner.class);
 
-    /** Артикул в ссылке https://www.wildberries.by/catalog/150449696/detail.aspx?size=... */
     private static final Pattern SKU_FROM_URL = Pattern.compile("/catalog/(\\d{5,})");
 
-    /** Цена вида "34,44" / "1 234,56" (только число, без валюты) */
     private static final Pattern PRICE = Pattern.compile("(\\d{1,3}(?:[\\s\\u00A0]\\d{3})+[.,]\\d{1,2}|\\d+[.,]\\d{1,2}|\\d+)");
 
     private final WildberriesProperties props;
@@ -44,9 +43,9 @@ public class WildberriesCartScanner {
         this.repository = repository;
     }
 
-    public void scanAndSave() {
-        log.info("Конфигурация Wildberries: cartUrl={}, storageStatePath={}, headless={}, timeout={}",
-                props.getCartUrl(), props.getStorageStatePath(), props.isHeadless(), props.getPageTimeoutMs());
+    public void scanAndSave() throws java.io.IOException {
+        log.info("Конфигурация Wildberries: cartUrl={}, storageStatePath={}, headless={}",
+                props.getCartUrl(), props.getStorageStatePath(), props.isHeadless());
 
         if (props.getStorageStatePath() == null || props.getStorageStatePath().isBlank()) {
             throw new IllegalStateException("Не задан wildberries.storage-state-path в application.properties");
@@ -59,7 +58,6 @@ public class WildberriesCartScanner {
         if (!Files.exists(storageState)) {
             throw new IllegalStateException(
                     "Не найден файл storageState: " + storageState.toAbsolutePath()
-                            + ". Сначала сохраните сессию Wildberries (см. README)."
             );
         }
 
@@ -75,17 +73,25 @@ public class WildberriesCartScanner {
 
             try (BrowserContext context = browser.newContext(contextOptions)) {
                 Page page = context.newPage();
-                page.setDefaultTimeout(props.getPageTimeoutMs());
 
                 log.info("Открываем корзину Wildberries: {}", props.getCartUrl());
                 page.navigate(props.getCartUrl());
                 page.waitForLoadState(LoadState.DOMCONTENTLOADED);
-                page.waitForTimeout(3000);
+                // Wildberries — SPA: карточки корзины рендерятся JS после DOMContentLoaded.
+                // Небольшая фиксированная пауза без проверок антибота и повторов.
+                page.waitForTimeout(8000);
+                String actualUrl = page.url();
+                String title = page.title();
+                log.info("Фактический URL: {}", actualUrl);
+                log.info("Заголовок страницы: {}", title);
 
-                log.info("Фактический URL: {}", page.url());
-                log.info("Заголовок страницы: {}", page.title());
+                if (!actualUrl.contains("/lk/basket") && !actualUrl.contains("basket")) {
+                    log.error("Страница корзины не открылась: фактический URL={} (ожидалась корзина). "
+                            + "БД не изменена. Проверьте файл сессии {}", actualUrl, storageState.toAbsolutePath());
+                    throw new IllegalStateException("Wildberries не открыл корзину. БД не изменена.");
+                }
+
                 String html = page.content();
-                log.info("Длина HTML страницы: {} символов", html.length());
                 try {
                     Path dump = Path.of("wildberries-cart-dump.html");
                     Files.writeString(dump, html);
@@ -94,22 +100,73 @@ public class WildberriesCartScanner {
                     log.warn("Не удалось сохранить HTML корзины: {}", e.getMessage());
                 }
 
+                if (html.contains("captcha-support@rwb.ru")
+                        || html.contains("support-countdown-text")
+                        || html.contains("/__wbaas/challenges/antibot/")) {
+                    throw new IllegalStateException("Wildberries вернул страницу проверки вместо корзины. "
+                            + "БД и сохранённая сессия не изменены; отчёт не отправляется.");
+                }
+
                 List<CartItem> items = parseCart(page);
                 log.info("Найдено товаров в корзине Wildberries: {}", items.size());
 
+                // Защита: если ни одной карточки не найдено, считаем это сбоем сканирования
+                // (сессия/рендер/разметка) и НЕ трогаем БД — иначе она опустеет.
+                if (items.isEmpty()) {
+                    log.error("Карточки товаров не найдены — сканирование считается неудачным, "
+                            + "БД не изменена. Проверьте сессию и wildberries-cart-dump.html.");
+                    throw new IllegalStateException("Не удалось прочитать товары корзины. БД не изменена.");
+                }
+
+                Path stateTarget = storageState.toAbsolutePath();
+                Path stateTemporary = Files.createTempFile(stateTarget.getParent(), "wb-session-", ".tmp");
+                try {
+                    context.storageState(new BrowserContext.StorageStateOptions()
+                            .setIndexedDB(true).setPath(stateTemporary));
+                    try {
+                        Files.move(stateTemporary, stateTarget,
+                                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                        Files.move(stateTemporary, stateTarget,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    log.info("Сессия Wildberries обновлена для следующего запуска");
+                } finally {
+                    Files.deleteIfExists(stateTemporary);
+                }
+
+                Set<String> scannedArticles = new HashSet<>();
                 for (CartItem item : items) {
-                    Optional<CartItem> existing = repository.findByArticle(item.getArticle());
+                    scannedArticles.add(item.getArticle());
+                    Optional<CartItem> existing = repository.findById(item.getArticle());
                     if (existing.isPresent()) {
                         CartItem e = existing.get();
+                        BigDecimal currentPrice = item.getPrice();
+                        BigDecimal historicalMin = e.getMinPrice() != null ? e.getMinPrice() : currentPrice;
+                        BigDecimal newMin = currentPrice.min(historicalMin);
+
                         e.setName(item.getName());
-                        e.setPrice(item.getPrice());
-                        e.setScannedAt(Instant.now());
+                        e.setPrice(currentPrice);
+                        e.setMinPrice(newMin);
                         repository.save(e);
-                        log.info("Обновлён: {} | {} | {}", e.getName(), e.getArticle(), e.getPrice());
+                        log.info("Обновлён: {} | {} | текущая={} | минимум={} | новый минимум={}",
+                                e.getName(), e.getArticle(), currentPrice, historicalMin, newMin);
                     } else {
-                        item.setScannedAt(Instant.now());
+                        item.setMinPrice(item.getPrice());
                         repository.save(item);
-                        log.info("Добавлен: {} | {} | {}", item.getName(), item.getArticle(), item.getPrice());
+                        log.info("Добавлен: {} | {} | текущая={} | минимум={}",
+                                item.getName(), item.getArticle(), item.getPrice(), item.getMinPrice());
+                    }
+                }
+
+                List<CartItem> stale = repository.findAll().stream()
+                        .filter(dbItem -> !scannedArticles.contains(dbItem.getArticle()))
+                        .toList();
+                if (!stale.isEmpty()) {
+                    repository.deleteAll(stale);
+                    for (CartItem removed : stale) {
+                        log.info("Удалён (нет в корзине): {} | {}", removed.getName(), removed.getArticle());
                     }
                 }
                 log.info("Сканирование завершено, всего в БД: {}", repository.count());
@@ -122,11 +179,6 @@ public class WildberriesCartScanner {
     private List<CartItem> parseCart(Page page) {
         List<CartItem> result = new ArrayList<>();
 
-        // Реальная разметка корзины wildberries.by (по HTML-дампу):
-        // div.listItemWrap--...[data-basket-item-id] > div.listItemGood--...
-        // Точный селектор data-basket-item-id должен идти первым:
-        // class*='listItemGood' находит лишние вложенные элементы,
-        // из-за чего цена/артикул могут быть взяты не от того товара.
         String[] cardSelectors = {
                 "[data-basket-item-id]",
                 "[class*='listItemWrap']",
@@ -134,13 +186,19 @@ public class WildberriesCartScanner {
                 ".basket__item",
                 "[class*='basket__item']",
                 "[class*='basket-item']",
-                "[data-bag-item]"
+                "[data-bag-item]",
+                "[class*='basketItem']",
+                "[class*='cartItem']",
+                "[class*='productCard']",
+                "[class*='goodsItem']",
+                "[class*='itemWrap']",
+                "a[href*='/catalog/']"
         };
 
         List<ElementHandle> cards = List.of();
         for (String selector : cardSelectors) {
             List<ElementHandle> found = page.querySelectorAll(selector);
-            log.debug("Селектор {}: найдено {}", selector, found.size());
+            log.info("Селектор {}: найдено {}", selector, found.size());
             if (!found.isEmpty()) {
                 cards = found;
                 log.info("Используем селектор карточек: {} (найдено {})", selector, found.size());
@@ -149,8 +207,7 @@ public class WildberriesCartScanner {
         }
 
         if (cards.isEmpty()) {
-            log.warn("Карточки товаров не найдены. Возможно, корзина пуста или сессия не авторизована.");
-            log.warn("Проверьте wildberries-cart-dump.html.");
+            log.warn("Карточки товаров не найдены.");
             return result;
         }
 
@@ -160,19 +217,15 @@ public class WildberriesCartScanner {
                 String href = link == null ? null : link.getAttribute("href");
                 String article = extractArticle(href, card);
                 if (article == null) {
-                    log.debug("Не удалось извлечь артикул из: {}", href);
                     continue;
                 }
 
                 String name = extractName(card, link);
                 BigDecimal price = extractPrice(card);
                 if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-                    // Недоступные товары могут не иметь цены — сохраняем их,
-                    // чтобы количество товаров совпадало с сайтом.
-                    log.warn("Цена не распознана для товара '{}' (артикул {}) — сохраняем с ценой 0.01", name, article);
                     price = new BigDecimal("0.01");
                 }
-                result.add(new CartItem(name, article, price, null));
+                result.add(new CartItem(name, article, price));
             } catch (Exception e) {
                 log.warn("Ошибка разбора карточки товара: {}", e.getMessage());
             }
@@ -197,7 +250,6 @@ public class WildberriesCartScanner {
     }
 
     private String extractName(ElementHandle card, ElementHandle link) {
-        // В разметке WB название лежит в span.goodInfoName--xxxx
         String[] nameSelectors = {
                 "[class*='goodInfoName']",
                 "[class*='goodInfoTitle']",
@@ -221,21 +273,11 @@ public class WildberriesCartScanner {
     }
 
     private BigDecimal extractPrice(ElementHandle card) {
-        // Актуальная цена в WB лежит в:
-        // <h4 class="... listItemPriceWithoutWallet--...">
-        //     <span>34,44&nbsp;<span style=...>BYN</span></span>
-        // </h4>
-        // БерёмТолько первый текстовый узел, чтобы в значение не попала валюта.
-        // Старая цена лежит в соседнем span с классом priceOld--... и не должна использоваться.
         ElementHandle priceEl = card.querySelector("[class*='listItemPriceWithoutWallet']");
         String text = firstTextNode(priceEl);
-        if (priceEl != null) {
-            log.debug("Цена из listItemPriceWithoutWallet (первый текстовый узел): '{}'", text);
-            BigDecimal parsed = parsePrice(text);
-            if (parsed != null) return parsed;
-        }
+        BigDecimal parsed = parsePrice(text);
+        if (parsed != null) return parsed;
 
-        // Резервный вариант: любой элемент цены, но тоже только первый текстовый узел.
         String[] priceSelectors = {
                 "[class*='listItemPrice']:not([class*='priceOld'])",
                 "[class*='finalPrice']",
@@ -246,19 +288,12 @@ public class WildberriesCartScanner {
             if (el == null) continue;
             String candidate = firstTextNode(el);
             if (candidate.isBlank() || candidate.contains("Нет в наличии")) continue;
-            log.debug("Кандидат цены [{}]: '{}'", sel, candidate);
-            BigDecimal parsed = parsePrice(candidate);
+            parsed = parsePrice(candidate);
             if (parsed != null) return parsed;
         }
-
         return null;
     }
 
-    /**
-     * Возвращает текст первого текстового узла элемента.
-     * В разметке WB цена и валюта — разные дочерние узлы spans, поэтому
-     * innerText вернёт "34,44 BYN", а нам нужен только "34,44".
-     */
     private String firstTextNode(ElementHandle el) {
         if (el == null) return "";
         Object value = el.evaluate(
@@ -279,7 +314,6 @@ public class WildberriesCartScanner {
         Matcher m = PRICE.matcher(normalized);
         if (!m.find()) return null;
         String found = m.group(1).replace(" ", "").replace("\u00A0", "");
-        // Разделяем целую и дробную части по последней точке/запятой
         int sep = Math.max(found.lastIndexOf('.'), found.lastIndexOf(','));
         String decimal;
         if (sep < 0) {

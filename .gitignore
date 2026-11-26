@@ -35,6 +35,8 @@ build/
 .vscode/
 
 ### Secrets and local data ###
+*.env
+.env
 wildberries-storage-state.json
 wildberries-cart-dump.html
 dump-matches.txt
