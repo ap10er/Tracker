@@ -15,7 +15,8 @@ public class EnvFileEnvironmentPostProcessor implements EnvironmentPostProcessor
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
         Dotenv dotenv = Dotenv.configure()
                 .filename("psw.env")
-                .directory("src/main/resources")
+                .directory(System.getProperty("user.dir"))
+//                .directory("src/main/resources")
                 .ignoreIfMissing()
                 .load();
 
